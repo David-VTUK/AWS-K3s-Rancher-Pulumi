@@ -1,0 +1,3 @@
+name: AWS-K3s-Rancher-Pulumi
+runtime: go
+description: Create an RDS backed K3s cluster and install Rancher on it
