@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/pulumi/pulumi-aws/sdk/v4/go/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v4/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v4/go/aws/rds"
@@ -117,7 +118,16 @@ func main() {
 			return err
 		}
 
-		_, err = rds.NewInstance(ctx, "_default", &rds.InstanceArgs{
+		subnetGroup, err := rds.NewSubnetGroup(ctx, "rds-subnet-group", &rds.SubnetGroupArgs{
+			Name:      pulumi.String("rds-subnet-group"),
+			SubnetIds: pulumi.StringArray{subnets[0].ID(), subnets[1].ID(), subnets[2].ID()},
+		})
+
+		if err != nil {
+			return err
+		}
+
+		rdsInstance, err := rds.NewInstance(ctx, "_default", &rds.InstanceArgs{
 			AllocatedStorage:    pulumi.Int(10),
 			Engine:              pulumi.String("mysql"),
 			EngineVersion:       pulumi.String("8.0.25"),
@@ -129,15 +139,54 @@ func main() {
 			Username:            pulumi.String("foo"),
 			Identifier:          pulumi.String("k3s-demo-cluster"),
 			VpcSecurityGroupIds: pulumi.StringArray{sg.ID()},
-			AvailabilityZone:    pulumi.String("eu-west-2a"),
 			MultiAz:             pulumi.Bool(true),
-			//	DbSubnetGroupName: pulumi.String(subnets[0].name),
+			DbSubnetGroupName:   subnetGroup.Name,
 		})
+
+		/*
+			joincommand := cluster.ClusterRegistrationToken.Command().ApplyT(func(command *string) string {
+				getPublicIP := "IP=$(curl -H \"X-aws-ec2-metadata-token: $TOKEN\" -v http://169.254.169.254/latest/meta-data/public-ipv4)"
+				installK3s := "curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.19.5+k3s2 INSTALL_K3S_EXEC=\"--node-external-ip $IP\" sh -"
+				nodecommand := fmt.Sprintf("#!/bin/bash\n%s\n%s\n%s", getPublicIP, installK3s, *command)
+				return nodecommand
+			}).(pulumi.StringOutput)
+		*/
 
 		if err != nil {
 			return err
 		}
 
+		var k3sNodeList []*ec2.Instance
+
+		for i := 0; i < 2; i++ {
+
+			userdata := rdsInstance.Endpoint.ApplyT(func(endpoint string) string {
+				getPublicIP := "IP=$(curl -H \"X-aws-ec2-metadata-token: $TOKEN\" -v http://169.254.169.254/latest/meta-data/public-ipv4)"
+				installK3s := fmt.Sprintf("curl -sfL https://get.k3s.io | sh -s - server --datastore-endpoint=\"mysql://foo:foobarbaz@tcp(%s:%s)/mydb", endpoint, "3306")
+				generatedUserData := fmt.Sprintf("#!/bin/bash\n%s\n%s", getPublicIP, installK3s)
+				return generatedUserData
+			}).(pulumi.StringOutput)
+
+			k3snode, err := ec2.NewInstance(ctx, "david-pulumi-fleet-node-"+strconv.Itoa(i), &ec2.InstanceArgs{
+				Ami:                 pulumi.String("ami-0ff4c8fb495a5a50d"),
+				InstanceType:        pulumi.String("t2.xlarge"),
+				Tags:                pulumi.StringMap{"Name": pulumi.String("david-k3s-node-" + strconv.Itoa(i))},
+				KeyName:             pulumi.String("davidh-keypair"),
+				VpcSecurityGroupIds: pulumi.StringArray{sg.ID()},
+				UserData:            userdata,
+				SubnetId:            subnets[i].ID(),
+			})
+
+			if err != nil {
+				return err
+			}
+
+			k3sNodeList = append(k3sNodeList, k3snode)
+		}
+
+		for k, v := range k3sNodeList {
+			ctx.Export("node"+strconv.Itoa(k), v.UserData)
+		}
 		return nil
 	})
 }
