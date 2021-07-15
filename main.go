@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	//"fmt"
 	"github.com/pulumi/pulumi-aws/sdk/v4/go/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v4/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v4/go/aws/rds"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 	"strconv"
 )
 
@@ -22,6 +24,19 @@ RDS instance
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
+
+		conf := config.New(ctx, "")
+
+		rdsEngine := conf.Get("rds-engine")
+		rdsEngineVersion := conf.Get("rds-engineVersion")
+		rdsInstanceClass := conf.Get("rds-instanceClass")
+		rdsIdentifier := conf.Get("rds-identifier")
+		rdsName := conf.Get("rds-name")
+		rdsParameterGroupName := conf.Get("rds-parameterGroupName")
+		rdsPassword := conf.Get("rds-password")
+		rdsUsername := conf.Get("rds-username")
+		k3sVersion := conf.Get("k3s-version")
+		k3sToken := conf.Get("k3s-token")
 
 		// Create AWS VPC
 		vpc, err := ec2.NewVpc(ctx, "david-pulumi-vpc", &ec2.VpcArgs{
@@ -129,15 +144,15 @@ func main() {
 
 		rdsInstance, err := rds.NewInstance(ctx, "_default", &rds.InstanceArgs{
 			AllocatedStorage:    pulumi.Int(10),
-			Engine:              pulumi.String("mysql"),
-			EngineVersion:       pulumi.String("8.0.25"),
-			InstanceClass:       pulumi.String("db.t3.micro"),
-			Name:                pulumi.String("mydb"),
-			ParameterGroupName:  pulumi.String("default.mysql8.0"),
-			Password:            pulumi.String("foobarbaz"),
+			Engine:              pulumi.String(rdsEngine),
+			EngineVersion:       pulumi.String(rdsEngineVersion),
+			InstanceClass:       pulumi.String(rdsInstanceClass),
+			Name:                pulumi.String(rdsName),
+			ParameterGroupName:  pulumi.String(rdsParameterGroupName),
+			Password:            pulumi.String(rdsPassword),
 			SkipFinalSnapshot:   pulumi.Bool(true),
-			Username:            pulumi.String("foo"),
-			Identifier:          pulumi.String("k3s-demo-cluster"),
+			Username:            pulumi.String(rdsUsername),
+			Identifier:          pulumi.String(rdsIdentifier),
 			VpcSecurityGroupIds: pulumi.StringArray{sg.ID()},
 			MultiAz:             pulumi.Bool(true),
 			DbSubnetGroupName:   subnetGroup.Name,
@@ -151,12 +166,10 @@ func main() {
 
 		userdata := rdsInstance.Endpoint.ApplyT(func(endpoint string) string {
 			getPublicIP := "IP=$(curl -H \"X-aws-ec2-metadata-token: $TOKEN\" -v http://169.254.169.254/latest/meta-data/public-ipv4)"
-			installK3s := fmt.Sprintf("curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.20.8+k3s1 K3S_TOKEN=\"super-secret\" INSTALL_K3S_EXEC=\"--node-external-ip $IP\" sh -s - server --datastore-endpoint=\"mysql://foo:foobarbaz@tcp(%s)/mydb\"", endpoint)
+			installK3s := fmt.Sprintf("curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=%s K3S_TOKEN=\"%s\" INSTALL_K3S_EXEC=\"--node-external-ip $IP\" sh -s - server --datastore-endpoint=\"%s://%s:%s@tcp(%s)/%s\"", k3sVersion, k3sToken, rdsEngine, rdsUsername, rdsPassword, endpoint, rdsName)
 			generatedUserData := fmt.Sprintf("#!/bin/bash\n%s\n%s", getPublicIP, installK3s)
 			return generatedUserData
 		}).(pulumi.StringOutput)
-
-		userdata2 := pulumi.All(rdsInstance.Endpoint)
 
 		k3snode1, err := ec2.NewInstance(ctx, "david-pulumi-fleet-node-1", &ec2.InstanceArgs{
 			Ami:                 pulumi.String("ami-0ff4c8fb495a5a50d"),
