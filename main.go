@@ -152,10 +152,11 @@ func main() {
 		userdata := rdsInstance.Endpoint.ApplyT(func(endpoint string) string {
 			getPublicIP := "IP=$(curl -H \"X-aws-ec2-metadata-token: $TOKEN\" -v http://169.254.169.254/latest/meta-data/public-ipv4)"
 			installK3s := fmt.Sprintf("curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.20.8+k3s1 K3S_TOKEN=\"super-secret\" INSTALL_K3S_EXEC=\"--node-external-ip $IP\" sh -s - server --datastore-endpoint=\"mysql://foo:foobarbaz@tcp(%s)/mydb\"", endpoint)
-
 			generatedUserData := fmt.Sprintf("#!/bin/bash\n%s\n%s", getPublicIP, installK3s)
 			return generatedUserData
 		}).(pulumi.StringOutput)
+
+		userdata2 := pulumi.All(rdsInstance.Endpoint)
 
 		k3snode1, err := ec2.NewInstance(ctx, "david-pulumi-fleet-node-1", &ec2.InstanceArgs{
 			Ami:                 pulumi.String("ami-0ff4c8fb495a5a50d"),
