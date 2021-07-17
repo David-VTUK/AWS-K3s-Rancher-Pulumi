@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"github.com/pulumi/pulumi-aws/sdk/v4/go/aws/lb"
+	"io/ioutil"
+	"strings"
 
 	//"fmt"
 	"github.com/pulumi/pulumi-aws/sdk/v4/go/aws"
@@ -99,7 +101,7 @@ func main() {
 		}
 
 		//How many AZ's to spread nodes across. Default to 3.
-		zoneNumber := 3
+		zoneNumber := 2
 
 		var subnets []*ec2.Subnet
 
@@ -137,7 +139,7 @@ func main() {
 
 		subnetGroup, err := rds.NewSubnetGroup(ctx, "rds-subnet-group", &rds.SubnetGroupArgs{
 			Name:      pulumi.String("rds-subnet-group"),
-			SubnetIds: pulumi.StringArray{subnets[0].ID(), subnets[1].ID(), subnets[2].ID()},
+			SubnetIds: pulumi.StringArray{subnets[0].ID(), subnets[1].ID()},
 		})
 
 		if err != nil {
@@ -166,23 +168,46 @@ func main() {
 
 		// Need to jitter the EC2 creations because of https://github.com/k3s-io/k3s/issues/3226
 
+		loadbalancer, err := lb.NewLoadBalancer(ctx, "k3s-lb", &lb.LoadBalancerArgs{
+			Name:             pulumi.String("k3s-lb"),
+			Subnets:          pulumi.StringArray{subnets[0].ID(), subnets[1].ID()},
+			LoadBalancerType: pulumi.String("network"),
+		})
+
+		manifest, err := ioutil.ReadFile("./rancherInstall.yaml")
+
+		userdata2 := pulumi.All(rdsInstance.Endpoint, loadbalancer.DnsName).ApplyT(
+			func(args []interface{}) string {
+				endpoint := args[0].(string)
+				loadbalancerDNS := args[1].(string)
+
+				installK3s := fmt.Sprintf("curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=%s K3S_TOKEN=\"%s\" sh -s - server --datastore-endpoint=\"%s://%s:%s@tcp(%s)/%s\"", k3sVersion, k3sToken, rdsEngine, rdsUsername, rdsPassword, endpoint, rdsName)
+
+				replaceRancherURL := strings.Replace(string(manifest), "$RANCHER_URL", loadbalancerDNS, -1)
+				replaceK3sInstall := strings.Replace(replaceRancherURL, "$installK3s", installK3s, -1)
+				return replaceK3sInstall
+			}).(pulumi.StringOutput)
+
 		var k3sNodes []*ec2.Instance
 
 		userdata := rdsInstance.Endpoint.ApplyT(func(endpoint string) string {
-			getPublicIP := "IP=$(curl -H \"X-aws-ec2-metadata-token: $TOKEN\" -v http://169.254.169.254/latest/meta-data/public-ipv4)"
-			installK3s := fmt.Sprintf("curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=%s K3S_TOKEN=\"%s\" INSTALL_K3S_EXEC=\"--node-external-ip $IP\" sh -s - server --datastore-endpoint=\"%s://%s:%s@tcp(%s)/%s\"", k3sVersion, k3sToken, rdsEngine, rdsUsername, rdsPassword, endpoint, rdsName)
-			generatedUserData := fmt.Sprintf("#!/bin/bash\n%s\n%s", getPublicIP, installK3s)
+			//getPublicIP := "IP=$(curl -H \"X-aws-ec2-metadata-token: $TOKEN\" -v http://169.254.169.254/latest/meta-data/public-ipv4)"
+			//installK3s := fmt.Sprintf("curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=%s K3S_TOKEN=\"%s\" INSTALL_K3S_EXEC=\"--node-external-ip $IP\" sh -s - server --datastore-endpoint=\"%s://%s:%s@tcp(%s)/%s\"", k3sVersion, k3sToken, rdsEngine, rdsUsername, rdsPassword, endpoint, rdsName)
+			//generatedUserData := fmt.Sprintf("#!/bin/bash\n%s\n%s", getPublicIP, installK3s)
+			installK3s := fmt.Sprintf("curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=%s K3S_TOKEN=\"%s\" sh -s - server --datastore-endpoint=\"%s://%s:%s@tcp(%s)/%s\"", k3sVersion, k3sToken, rdsEngine, rdsUsername, rdsPassword, endpoint, rdsName)
+			generatedUserData := fmt.Sprintf("#!/bin/bash\n%s", installK3s)
 			return generatedUserData
 		}).(pulumi.StringOutput)
 
 		k3snode1, err := ec2.NewInstance(ctx, "david-pulumi-k3s-node-1", &ec2.InstanceArgs{
 			Ami:                 pulumi.String("ami-0ff4c8fb495a5a50d"),
 			InstanceType:        pulumi.String("t2.xlarge"),
-			Tags:                pulumi.StringMap{"Name": pulumi.String("david-k3s-node-2")},
+			Tags:                pulumi.StringMap{"Name": pulumi.String("david-k3s-node-1")},
 			KeyName:             pulumi.String("ec2-keypair"),
 			VpcSecurityGroupIds: pulumi.StringArray{sg.ID()},
 			UserData:            userdata,
 			SubnetId:            subnets[0].ID(),
+			//AssociatePublicIpAddress: pulumi.Bool(false),
 		})
 
 		k3sNodes = append(k3sNodes, k3snode1)
@@ -193,8 +218,9 @@ func main() {
 			Tags:                pulumi.StringMap{"Name": pulumi.String("david-k3s-node-2")},
 			KeyName:             pulumi.String("ec2-keypair"),
 			VpcSecurityGroupIds: pulumi.StringArray{sg.ID()},
-			UserData:            userdata,
+			UserData:            userdata2,
 			SubnetId:            subnets[1].ID(),
+			//AssociatePublicIpAddress: pulumi.Bool(false),
 		}, pulumi.DependsOn([]pulumi.Resource{k3snode1}))
 
 		k3sNodes = append(k3sNodes, k3snode2)
@@ -206,12 +232,6 @@ func main() {
 		for k, v := range k3sNodes {
 			ctx.Export("ip"+strconv.Itoa(k), v.PublicIp)
 		}
-
-		loadbalancer, err := lb.NewLoadBalancer(ctx, "k3s-lb", &lb.LoadBalancerArgs{
-			Name:             pulumi.String("k3s-lb"),
-			Subnets:          pulumi.StringArray{subnets[0].ID(), subnets[1].ID(), subnets[2].ID()},
-			LoadBalancerType: pulumi.String("network"),
-		})
 
 		targetgroup, err := lb.NewTargetGroup(ctx, "k3s-tg", &lb.TargetGroupArgs{
 			Name:     pulumi.String("pulumi-example-lb-tg"),
@@ -254,6 +274,8 @@ func main() {
 				TargetId:       k3sNodes[i].ID(),
 			})
 		}
+
+		ctx.Export("URL", loadbalancer.DnsName)
 
 		return nil
 	})
