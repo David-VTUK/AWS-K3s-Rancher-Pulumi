@@ -21,6 +21,7 @@ write_files:
         chart: cert-manager
         targetNamespace: cert-manager
         repo: https://charts.jetstack.io
+        version: v1.4.0
         set:
           installCRDs: "true"
       ---

@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"strings"
 
-	//"fmt"
 	"github.com/pulumi/pulumi-aws/sdk/v4/go/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v4/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v4/go/aws/rds"
@@ -14,17 +13,6 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 	"strconv"
 )
-
-/*
-Create the following
-
-VPC
-Subnets
-
-RDS instance
-
-
-*/
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
@@ -191,9 +179,6 @@ func main() {
 		var k3sNodes []*ec2.Instance
 
 		userdata := rdsInstance.Endpoint.ApplyT(func(endpoint string) string {
-			//getPublicIP := "IP=$(curl -H \"X-aws-ec2-metadata-token: $TOKEN\" -v http://169.254.169.254/latest/meta-data/public-ipv4)"
-			//installK3s := fmt.Sprintf("curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=%s K3S_TOKEN=\"%s\" INSTALL_K3S_EXEC=\"--node-external-ip $IP\" sh -s - server --datastore-endpoint=\"%s://%s:%s@tcp(%s)/%s\"", k3sVersion, k3sToken, rdsEngine, rdsUsername, rdsPassword, endpoint, rdsName)
-			//generatedUserData := fmt.Sprintf("#!/bin/bash\n%s\n%s", getPublicIP, installK3s)
 			installK3s := fmt.Sprintf("curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=%s K3S_TOKEN=\"%s\" sh -s - server --datastore-endpoint=\"%s://%s:%s@tcp(%s)/%s\"", k3sVersion, k3sToken, rdsEngine, rdsUsername, rdsPassword, endpoint, rdsName)
 			generatedUserData := fmt.Sprintf("#!/bin/bash\n%s", installK3s)
 			return generatedUserData
@@ -203,11 +188,10 @@ func main() {
 			Ami:                 pulumi.String("ami-0ff4c8fb495a5a50d"),
 			InstanceType:        pulumi.String("t2.xlarge"),
 			Tags:                pulumi.StringMap{"Name": pulumi.String("david-k3s-node-1")},
-			KeyName:             pulumi.String("ec2-keypair"),
+			KeyName:             pulumi.String("davidh-keypair"),
 			VpcSecurityGroupIds: pulumi.StringArray{sg.ID()},
 			UserData:            userdata,
 			SubnetId:            subnets[0].ID(),
-			//AssociatePublicIpAddress: pulumi.Bool(false),
 		})
 
 		k3sNodes = append(k3sNodes, k3snode1)
@@ -216,11 +200,10 @@ func main() {
 			Ami:                 pulumi.String("ami-0ff4c8fb495a5a50d"),
 			InstanceType:        pulumi.String("t2.xlarge"),
 			Tags:                pulumi.StringMap{"Name": pulumi.String("david-k3s-node-2")},
-			KeyName:             pulumi.String("ec2-keypair"),
+			KeyName:             pulumi.String("davidh-keypair"),
 			VpcSecurityGroupIds: pulumi.StringArray{sg.ID()},
 			UserData:            userdata2,
 			SubnetId:            subnets[1].ID(),
-			//AssociatePublicIpAddress: pulumi.Bool(false),
 		}, pulumi.DependsOn([]pulumi.Resource{k3snode1}))
 
 		k3sNodes = append(k3sNodes, k3snode2)
