@@ -250,28 +250,11 @@ func main() {
 			}},
 		})
 
-		// Create Loadbalancer listener for HTTP traffic
-		_, err = lb.NewListener(ctx, "k3s-lb-listener-http", &lb.ListenerArgs{
-			LoadBalancerArn: loadbalancer.Arn,
-			Port:            pulumi.Int(80),
-			Protocol:        pulumi.String("TCP"),
-			DefaultActions: &lb.ListenerDefaultActionArray{&lb.ListenerDefaultActionArgs{
-				TargetGroupArn: targetgroup.Arn,
-				Type:           pulumi.String("forward"),
-			}},
-		})
-
 		for i := 0; i < len(k3sNodes); i++ {
 
 			// Add Target group attachments for nodes
 			_, err = lb.NewTargetGroupAttachment(ctx, "k3s-tga-https-"+strconv.Itoa(i), &lb.TargetGroupAttachmentArgs{
 				Port:           pulumi.Int(443),
-				TargetGroupArn: targetgroup.Arn,
-				TargetId:       k3sNodes[i].ID(),
-			})
-
-			_, err = lb.NewTargetGroupAttachment(ctx, "k3s-tga-http-"+strconv.Itoa(i), &lb.TargetGroupAttachmentArgs{
-				Port:           pulumi.Int(80),
 				TargetGroupArn: targetgroup.Arn,
 				TargetId:       k3sNodes[i].ID(),
 			})
