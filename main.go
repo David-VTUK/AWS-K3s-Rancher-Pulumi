@@ -32,9 +32,9 @@ func main() {
 		k3sToken := conf.Get("k3s-token")
 
 		// Create AWS VPC
-		vpc, err := ec2.NewVpc(ctx, "david-pulumi-vpc", &ec2.VpcArgs{
+		vpc, err := ec2.NewVpc(ctx, "pulumi-vpc", &ec2.VpcArgs{
 			CidrBlock:          pulumi.String("10.0.0.0/16"),
-			Tags:               pulumi.StringMap{"Name": pulumi.String("david-pulumi-vpc")},
+			Tags:               pulumi.StringMap{"Name": pulumi.String("pulumi-vpc")},
 			EnableDnsHostnames: pulumi.Bool(true),
 			EnableDnsSupport:   pulumi.Bool(true),
 		})
@@ -44,7 +44,7 @@ func main() {
 		}
 
 		// Create IGW
-		igw, err := ec2.NewInternetGateway(ctx, "david-pulumi-gw", &ec2.InternetGatewayArgs{
+		igw, err := ec2.NewInternetGateway(ctx, "pulumi-gw", &ec2.InternetGatewayArgs{
 			VpcId: vpc.ID(),
 		})
 
@@ -53,9 +53,9 @@ func main() {
 		}
 
 		// Create AWS security group
-		sg, err := ec2.NewSecurityGroup(ctx, "david-pulumi-sg", &ec2.SecurityGroupArgs{
+		sg, err := ec2.NewSecurityGroup(ctx, "pulumi-sg", &ec2.SecurityGroupArgs{
 			Description: pulumi.String("Security group for ec2 Nodes"),
-			Name:        pulumi.String("david-pulumi-sg"),
+			Name:        pulumi.String("pulumi-sg"),
 			VpcId:       vpc.ID(),
 
 			Ingress: ec2.SecurityGroupIngressArray{
@@ -97,9 +97,9 @@ func main() {
 
 		// Iterate through the AZ's for the VPC and create a subnet in each
 		for i := 0; i < zoneNumber; i++ {
-			subnet, err := ec2.NewSubnet(ctx, "david-pulumi-subnet-"+strconv.Itoa(i), &ec2.SubnetArgs{
+			subnet, err := ec2.NewSubnet(ctx, "pulumi-subnet-"+strconv.Itoa(i), &ec2.SubnetArgs{
 				AvailabilityZone:    pulumi.String(zoneList.Names[i]),
-				Tags:                pulumi.StringMap{"Name": pulumi.String("david-pulumi-subnet-" + strconv.Itoa(i))},
+				Tags:                pulumi.StringMap{"Name": pulumi.String("pulumi-subnet-" + strconv.Itoa(i))},
 				VpcId:               vpc.ID(),
 				CidrBlock:           pulumi.String("10.0." + strconv.Itoa(i) + ".0/24"),
 				MapPublicIpOnLaunch: pulumi.Bool(true),
@@ -113,7 +113,7 @@ func main() {
 		}
 
 		// Add Route Table
-		_, err = ec2.NewDefaultRouteTable(ctx, "david-pulumi-routetable", &ec2.DefaultRouteTableArgs{
+		_, err = ec2.NewDefaultRouteTable(ctx, "pulumi-routetable", &ec2.DefaultRouteTableArgs{
 			DefaultRouteTableId: vpc.DefaultRouteTableId,
 			Routes: ec2.DefaultRouteTableRouteArray{
 				ec2.DefaultRouteTableRouteInput(&ec2.DefaultRouteTableRouteArgs{
@@ -128,7 +128,7 @@ func main() {
 		}
 
 		// Create subnet group for RDS
-		subnetGroup, err := rds.NewSubnetGroup(ctx, "rds-subnet-group", &rds.SubnetGroupArgs{
+		subnetGroup, err := rds.NewSubnetGroup(ctx, "pulumi-rds-subnet-group", &rds.SubnetGroupArgs{
 			Name:      pulumi.String("rds-subnet-group"),
 			SubnetIds: pulumi.StringArray{subnets[0].ID(), subnets[1].ID()},
 		})
@@ -138,7 +138,7 @@ func main() {
 		}
 
 		// Create RDS instance
-		rdsInstance, err := rds.NewInstance(ctx, "_default", &rds.InstanceArgs{
+		rdsInstance, err := rds.NewInstance(ctx, "pulumi-rds", &rds.InstanceArgs{
 			AllocatedStorage:    pulumi.Int(10),
 			Engine:              pulumi.String(rdsEngine),
 			EngineVersion:       pulumi.String(rdsEngineVersion),
@@ -159,7 +159,7 @@ func main() {
 		}
 
 		// Create Loadbalancer
-		loadbalancer, err := lb.NewLoadBalancer(ctx, "k3s-lb", &lb.LoadBalancerArgs{
+		loadbalancer, err := lb.NewLoadBalancer(ctx, "pulumi-k3s-lb", &lb.LoadBalancerArgs{
 			Name:             pulumi.String("k3s-lb"),
 			Subnets:          pulumi.StringArray{subnets[0].ID(), subnets[1].ID()},
 			LoadBalancerType: pulumi.String("network"),
@@ -198,10 +198,10 @@ func main() {
 		var k3sNodes []*ec2.Instance
 
 		// Create first node, seed with userdata
-		k3snode1, err := ec2.NewInstance(ctx, "david-pulumi-k3s-node-1", &ec2.InstanceArgs{
+		k3snode1, err := ec2.NewInstance(ctx, "pulumi-k3s-node-1", &ec2.InstanceArgs{
 			Ami:                 pulumi.String("ami-0ff4c8fb495a5a50d"),
 			InstanceType:        pulumi.String("t2.xlarge"),
-			Tags:                pulumi.StringMap{"Name": pulumi.String("david-k3s-node-1")},
+			Tags:                pulumi.StringMap{"Name": pulumi.String("pulumi-k3s-node-1")},
 			KeyName:             pulumi.String("davidh-keypair"),
 			VpcSecurityGroupIds: pulumi.StringArray{sg.ID()},
 			UserData:            firstNodeUserData,
@@ -211,10 +211,10 @@ func main() {
 		k3sNodes = append(k3sNodes, k3snode1)
 
 		// Create second node, seed with userdata
-		k3snode2, err := ec2.NewInstance(ctx, "david-pulumi-k3s-node-2", &ec2.InstanceArgs{
+		k3snode2, err := ec2.NewInstance(ctx, "pulumi-k3s-node-2", &ec2.InstanceArgs{
 			Ami:                 pulumi.String("ami-0ff4c8fb495a5a50d"),
 			InstanceType:        pulumi.String("t2.xlarge"),
-			Tags:                pulumi.StringMap{"Name": pulumi.String("david-k3s-node-2")},
+			Tags:                pulumi.StringMap{"Name": pulumi.String("pulumi-k3s-node-2")},
 			KeyName:             pulumi.String("davidh-keypair"),
 			VpcSecurityGroupIds: pulumi.StringArray{sg.ID()},
 			UserData:            secondNodeUserData,
@@ -232,7 +232,7 @@ func main() {
 		}
 
 		// Create target group for Loadbalancer
-		targetgroup, err := lb.NewTargetGroup(ctx, "k3s-tg", &lb.TargetGroupArgs{
+		targetgroup, err := lb.NewTargetGroup(ctx, "pulumi-k3s-tg", &lb.TargetGroupArgs{
 			Name:     pulumi.String("pulumi-example-lb-tg"),
 			Port:     pulumi.Int(443),
 			Protocol: pulumi.String("TCP"),
@@ -240,7 +240,7 @@ func main() {
 		})
 
 		// Create Loadbalancer listener for HTTPS traffic
-		_, err = lb.NewListener(ctx, "k3s-lb-listener-https", &lb.ListenerArgs{
+		_, err = lb.NewListener(ctx, "pulumi-k3s-lb-listener-https", &lb.ListenerArgs{
 			LoadBalancerArn: loadbalancer.Arn,
 			Port:            pulumi.Int(443),
 			Protocol:        pulumi.String("TCP"),
@@ -253,7 +253,7 @@ func main() {
 		for i := 0; i < len(k3sNodes); i++ {
 
 			// Add Target group attachments for nodes
-			_, err = lb.NewTargetGroupAttachment(ctx, "k3s-tga-https-"+strconv.Itoa(i), &lb.TargetGroupAttachmentArgs{
+			_, err = lb.NewTargetGroupAttachment(ctx, "pulumi-k3s-tga-https-"+strconv.Itoa(i), &lb.TargetGroupAttachmentArgs{
 				Port:           pulumi.Int(443),
 				TargetGroupArn: targetgroup.Arn,
 				TargetId:       k3sNodes[i].ID(),
