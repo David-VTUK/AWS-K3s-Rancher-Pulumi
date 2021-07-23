@@ -30,6 +30,9 @@ func main() {
 		rdsUsername := conf.Get("rds-username")
 		k3sVersion := conf.Get("k3s-version")
 		k3sToken := conf.Get("k3s-token")
+		k3sSize := conf.Get("k3s-ec2size")
+		k3sKey := conf.Get("k3s-ec2Key")
+		k3sAMI := conf.Get("k3s-ami")
 
 		// Create AWS VPC
 		vpc, err := ec2.NewVpc(ctx, "pulumi-vpc", &ec2.VpcArgs{
@@ -129,7 +132,7 @@ func main() {
 
 		// Create subnet group for RDS
 		subnetGroup, err := rds.NewSubnetGroup(ctx, "pulumi-rds-subnet-group", &rds.SubnetGroupArgs{
-			Name:      pulumi.String("rds-subnet-group"),
+			Name:      pulumi.String("pulumi-rds-subnet-group"),
 			SubnetIds: pulumi.StringArray{subnets[0].ID(), subnets[1].ID()},
 		})
 
@@ -199,10 +202,10 @@ func main() {
 
 		// Create first node, seed with userdata
 		k3snode1, err := ec2.NewInstance(ctx, "pulumi-k3s-node-1", &ec2.InstanceArgs{
-			Ami:                 pulumi.String("ami-0ff4c8fb495a5a50d"),
-			InstanceType:        pulumi.String("t2.xlarge"),
+			Ami:                 pulumi.String(k3sAMI),
+			InstanceType:        pulumi.String(k3sSize),
 			Tags:                pulumi.StringMap{"Name": pulumi.String("pulumi-k3s-node-1")},
-			KeyName:             pulumi.String("davidh-keypair"),
+			KeyName:             pulumi.String(k3sKey),
 			VpcSecurityGroupIds: pulumi.StringArray{sg.ID()},
 			UserData:            firstNodeUserData,
 			SubnetId:            subnets[0].ID(),
@@ -212,10 +215,10 @@ func main() {
 
 		// Create second node, seed with userdata
 		k3snode2, err := ec2.NewInstance(ctx, "pulumi-k3s-node-2", &ec2.InstanceArgs{
-			Ami:                 pulumi.String("ami-0ff4c8fb495a5a50d"),
-			InstanceType:        pulumi.String("t2.xlarge"),
+			Ami:                 pulumi.String(k3sAMI),
+			InstanceType:        pulumi.String(k3sSize),
 			Tags:                pulumi.StringMap{"Name": pulumi.String("pulumi-k3s-node-2")},
-			KeyName:             pulumi.String("davidh-keypair"),
+			KeyName:             pulumi.String(k3sKey),
 			VpcSecurityGroupIds: pulumi.StringArray{sg.ID()},
 			UserData:            secondNodeUserData,
 			SubnetId:            subnets[1].ID(),
