@@ -26,8 +26,10 @@ func main() {
 		rdsIdentifier := conf.Get("rds-identifier")
 		rdsName := conf.Get("rds-name")
 		rdsParameterGroupName := conf.Get("rds-parameterGroupName")
-		rdsPassword := conf.Get("rds-password")
+		//rdsEncryptedPassword := conf.Get("rds-password")
+		rdsEncryptedPassword := conf.GetSecret("rds-password")
 		rdsUsername := conf.Get("rds-username")
+		rdsSize := conf.GetInt("rds-size")
 		k3sVersion := conf.Get("k3s-version")
 		k3sToken := conf.Get("k3s-token")
 		k3sSize := conf.Get("k3s-ec2size")
@@ -142,13 +144,13 @@ func main() {
 
 		// Create RDS instance
 		rdsInstance, err := rds.NewInstance(ctx, "pulumi-rds", &rds.InstanceArgs{
-			AllocatedStorage:    pulumi.Int(10),
+			AllocatedStorage:    pulumi.Int(rdsSize),
 			Engine:              pulumi.String(rdsEngine),
 			EngineVersion:       pulumi.String(rdsEngineVersion),
 			InstanceClass:       pulumi.String(rdsInstanceClass),
 			Name:                pulumi.String(rdsName),
 			ParameterGroupName:  pulumi.String(rdsParameterGroupName),
-			Password:            pulumi.String(rdsPassword),
+			Password:            rdsEncryptedPassword,
 			SkipFinalSnapshot:   pulumi.Bool(true),
 			Username:            pulumi.String(rdsUsername),
 			Identifier:          pulumi.String(rdsIdentifier),
@@ -178,18 +180,21 @@ func main() {
 			return err
 		}
 
-		// Generate userdata to seed the first node. This will be used to initialise the K3s Cluster
-		firstNodeUserData := rdsInstance.Endpoint.ApplyT(func(endpoint string) string {
-			installK3s := fmt.Sprintf("curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=%s K3S_TOKEN=\"%s\" sh -s - server --datastore-endpoint=\"%s://%s:%s@tcp(%s)/%s\"", k3sVersion, k3sToken, rdsEngine, rdsUsername, rdsPassword, endpoint, rdsName)
-			generatedUserData := fmt.Sprintf("#!/bin/bash\n%s", installK3s)
-			return generatedUserData
-		}).(pulumi.StringOutput)
+		firstNodeUserData := pulumi.All(rdsInstance.Endpoint, rdsEncryptedPassword).ApplyT(
+			func(args []interface{}) string {
+				endpoint := args[0].(string)
+				rdsPassword := args[1].(string)
+				installK3s := fmt.Sprintf("curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=%s K3S_TOKEN=\"%s\" sh -s - server --datastore-endpoint=\"%s://%s:%s@tcp(%s)/%s\"", k3sVersion, k3sToken, rdsEngine, rdsUsername, rdsPassword, endpoint, rdsName)
+				generatedUserData := fmt.Sprintf("#!/bin/bash\n%s", installK3s)
+				return generatedUserData
+			}).(pulumi.StringOutput)
 
 		// Genreate userdata to seed the second node. This will be used to install Rancher
-		secondNodeUserData := pulumi.All(rdsInstance.Endpoint, loadbalancer.DnsName).ApplyT(
+		secondNodeUserData := pulumi.All(rdsInstance.Endpoint, loadbalancer.DnsName, rdsEncryptedPassword).ApplyT(
 			func(args []interface{}) string {
 				endpoint := args[0].(string)
 				loadbalancerDNS := args[1].(string)
+				rdsPassword := args[2].(string)
 
 				installK3s := fmt.Sprintf("curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=%s K3S_TOKEN=\"%s\" sh -s - server --datastore-endpoint=\"%s://%s:%s@tcp(%s)/%s\"", k3sVersion, k3sToken, rdsEngine, rdsUsername, rdsPassword, endpoint, rdsName)
 

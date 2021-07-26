@@ -1,12 +1,17 @@
 config:
+  AWS-K3s-Rancher-Pulumi:k3s-ami: ami-093d303510c432519
+  AWS-K3s-Rancher-Pulumi:k3s-ec2Key: davidh-keypair
+  AWS-K3s-Rancher-Pulumi:k3s-ec2size: t2.xlarge
   AWS-K3s-Rancher-Pulumi:k3s-token: super-secret
-  AWS-K3s-Rancher-Pulumi:k3s-version: v1.21.2+k3s1
+  AWS-K3s-Rancher-Pulumi:k3s-version: v1.20.6+k3s1
   AWS-K3s-Rancher-Pulumi:rds-engine: mysql
   AWS-K3s-Rancher-Pulumi:rds-engineVersion: 8.0.25
   AWS-K3s-Rancher-Pulumi:rds-identifier: k3s-demo-cluster
   AWS-K3s-Rancher-Pulumi:rds-instanceClass: db.t3.micro
   AWS-K3s-Rancher-Pulumi:rds-name: mydb
   AWS-K3s-Rancher-Pulumi:rds-parameterGroupName: default.mysql8.0
-  AWS-K3s-Rancher-Pulumi:rds-password: SomeSuperSecretPassword
+  AWS-K3s-Rancher-Pulumi:rds-password:
+    secure: AAA..............................
+  AWS-K3s-Rancher-Pulumi:rds-size: "10"
   AWS-K3s-Rancher-Pulumi:rds-username: foo
   aws:region: eu-west-2
