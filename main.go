@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"github.com/pulumi/pulumi-aws/sdk/v4/go/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v4/go/aws/ec2"
@@ -269,26 +270,30 @@ func main() {
 			})
 		}
 
-		checkRancherUrl(loadbalancer)
+		checkRancherUrl(loadbalancer, ctx)
 
 		return nil
 	})
 }
 
-func checkRancherUrl(loadBalancer *lb.LoadBalancer) {
+func checkRancherUrl(loadBalancer *lb.LoadBalancer, ctx *pulumi.Context) {
 	_ = loadBalancer.DnsName.ApplyT(func(url string) string {
+
+		ctx.Log.Info("Waiting for Rancher", nil)
 
 		rancherReady := false
 
 		for rancherReady != true {
 
-			req, err := http.NewRequest("GET", fmt.Sprintf("https://%s", url), nil)
-			if err != nil {
-				//Specific error handling would depend on scenario
-				fmt.Printf("%v\n", err)
-
+			tr := &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			}
-			res, err := http.DefaultClient.Do(req)
+			client := &http.Client{Transport: tr}
+
+			req, err := http.NewRequest("GET", fmt.Sprintf("https://%s", url), nil)
+
+			res, err := client.Do(req)
+
 			if err != nil {
 				//Specific error handling would depend on scenario
 				fmt.Printf("%v\n", err)
@@ -296,10 +301,8 @@ func checkRancherUrl(loadBalancer *lb.LoadBalancer) {
 			}
 
 			if res == nil {
-				fmt.Println("Empty response found, waiting")
+				ctx.Log.Info("Empty response found, waiting", nil)
 				time.Sleep(5 * time.Second)
-				res.Body.Close()
-
 			} else {
 
 				bodyBytes, err := ioutil.ReadAll(res.Body)
@@ -310,18 +313,15 @@ func checkRancherUrl(loadBalancer *lb.LoadBalancer) {
 
 				if strings.Contains(string(bodyBytes), "apiroot") {
 					rancherReady = true
-
-					fmt.Println("Rancher is ready")
+					ctx.Log.Info("Rancher Ready", nil)
 
 				} else {
-					fmt.Println("Rancher not ready")
+					ctx.Log.Info("Rancher Not Ready", nil)
 					time.Sleep(5 * time.Second)
 				}
-
 				res.Body.Close()
 			}
 		}
 		return fmt.Sprintf("https://%s", url)
-
 	})
 }
