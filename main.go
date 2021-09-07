@@ -270,58 +270,65 @@ func main() {
 			})
 		}
 
-		checkRancherUrl(loadbalancer, ctx)
+		checkRancherUrl(loadbalancer, k3snode2, ctx)
+
+		rancherURL := pulumi.Sprintf("https://%s", loadbalancer.DnsName)
+		ctx.Export("Rancher is ready. Url is", rancherURL)
 
 		return nil
 	})
+
 }
 
-func checkRancherUrl(loadBalancer *lb.LoadBalancer, ctx *pulumi.Context) {
-	_ = loadBalancer.DnsName.ApplyT(func(url string) string {
+func checkRancherUrl(loadBalancer *lb.LoadBalancer, ec2Node *ec2.Instance, ctx *pulumi.Context) {
+	//firstNodeUserData := pulumi.All(rdsInstance.Endpoint, rdsEncryptedPassword).ApplyT(
+	_ = pulumi.All(loadBalancer.DnsName, ec2Node.Arn).ApplyT(
+		func(args []interface{}) string {
+			url := args[0].(string)
 
-		ctx.Log.Info("Waiting for Rancher", nil)
+			ctx.Log.Info("Waiting for Rancher", nil)
 
-		rancherReady := false
+			rancherReady := false
 
-		for rancherReady != true {
+			for rancherReady != true {
 
-			tr := &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			}
-			client := &http.Client{Transport: tr}
+				tr := &http.Transport{
+					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				}
+				client := &http.Client{Transport: tr}
 
-			req, err := http.NewRequest("GET", fmt.Sprintf("https://%s", url), nil)
+				req, err := http.NewRequest("GET", fmt.Sprintf("https://%s", url), nil)
 
-			res, err := client.Do(req)
+				res, err := client.Do(req)
 
-			if err != nil {
-				//Specific error handling would depend on scenario
-				fmt.Printf("%v\n", err)
-
-			}
-
-			if res == nil {
-				ctx.Log.Info("Empty response found, waiting", nil)
-				time.Sleep(5 * time.Second)
-			} else {
-
-				bodyBytes, err := ioutil.ReadAll(res.Body)
 				if err != nil {
 					//Specific error handling would depend on scenario
 					fmt.Printf("%v\n", err)
+
 				}
 
-				if strings.Contains(string(bodyBytes), "apiroot") {
-					rancherReady = true
-					ctx.Log.Info("Rancher Ready", nil)
-
-				} else {
-					ctx.Log.Info("Rancher Not Ready", nil)
+				if res == nil {
+					ctx.Log.Info("Empty response found, waiting", nil)
 					time.Sleep(5 * time.Second)
+				} else {
+
+					bodyBytes, err := ioutil.ReadAll(res.Body)
+					if err != nil {
+						//Specific error handling would depend on scenario
+						fmt.Printf("%v\n", err)
+					}
+
+					if strings.Contains(string(bodyBytes), "apiroot") {
+						rancherReady = true
+						ctx.Log.Info("Rancher Ready", nil)
+						res.Body.Close()
+
+					} else {
+						ctx.Log.Info("Rancher Not Ready", nil)
+						time.Sleep(5 * time.Second)
+					}
 				}
-				res.Body.Close()
 			}
-		}
-		return fmt.Sprintf("https://%s", url)
-	})
+			return url
+		}).(pulumi.StringOutput)
 }
